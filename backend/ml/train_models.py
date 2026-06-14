@@ -1,17 +1,32 @@
 """
 train_models.py
 Train multiple ML models for job fraud detection.
-Usage: python -m backend.ml.train_models
+
+Pipeline:
+    1. Load real jobs from Supabase + generate synthetic data
+    2. Split into train/test (RAW jobs, no leakage)
+    3. Fit TF-IDF on training data only
+    4. Cross-validate models on train set
+    5. Train RF + XGBoost + Isolation Forest
+    6. Save models + metadata
+
+Usage:
+    python -m backend.ml.train_models
 """
 
 import json
 import random
+import warnings
 import numpy as np
 import pandas as pd
 from pathlib import Path
 import joblib
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import (
+    train_test_split,
+    StratifiedKFold,
+    cross_val_score,
+)
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.metrics import (
     classification_report,
@@ -27,9 +42,11 @@ from .feature_extractor import (
     build_feature_dataframe,
     extract_labels,
 )
-import warnings
+
+# Suppress sklearn / xgboost noise
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
+
 
 # ============================================================================
 # CONFIGURATION
@@ -277,6 +294,51 @@ def generate_synthetic_legit_dataset(num_legit: int = 50) -> list:
 
 
 # ============================================================================
+# CROSS VALIDATION
+# ============================================================================
+
+def run_cross_validation(X, y) -> dict:
+    """5-Fold Stratified Cross Validation."""
+    print("\n" + "=" * 70)
+    print("CROSS VALIDATION (5-Fold Stratified)")
+    print("=" * 70)
+
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
+
+    rf_model = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=15,
+        min_samples_split=5,
+        min_samples_leaf=2,
+        class_weight="balanced",
+        random_state=RANDOM_SEED,
+        n_jobs=-1,
+    )
+
+    xgb_model = xgb.XGBClassifier(
+        n_estimators=200,
+        max_depth=6,
+        learning_rate=0.1,
+        eval_metric="logloss",
+        random_state=RANDOM_SEED,
+        n_jobs=-1,
+    )
+
+    rf_scores  = cross_val_score(rf_model,  X, y, cv=cv, scoring="f1_weighted")
+    xgb_scores = cross_val_score(xgb_model, X, y, cv=cv, scoring="f1_weighted")
+
+    print(f"Random Forest CV F1: {rf_scores.mean():.4f} (+/- {rf_scores.std():.4f})")
+    print(f"XGBoost       CV F1: {xgb_scores.mean():.4f} (+/- {xgb_scores.std():.4f})")
+
+    return {
+        "rf_cv_f1_mean":  float(rf_scores.mean()),
+        "rf_cv_f1_std":   float(rf_scores.std()),
+        "xgb_cv_f1_mean": float(xgb_scores.mean()),
+        "xgb_cv_f1_std":  float(xgb_scores.std()),
+    }
+
+
+# ============================================================================
 # MODEL TRAINING
 # ============================================================================
 
@@ -303,7 +365,6 @@ def train_random_forest(X_train, y_train, X_test, y_test) -> tuple:
 
     print(f"\nAccuracy: {accuracy:.2%}")
     print(f"F1 Score: {f1:.4f}")
-
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred, zero_division=0))
 
@@ -377,7 +438,8 @@ def train_isolation_forest(X_train) -> object:
 
     predictions = model.predict(X_train)
     n_anomalies = (predictions == -1).sum()
-    print(f"\nDetected {n_anomalies}/{len(predictions)} anomalies ({n_anomalies/len(predictions):.1%})")
+    print(f"\nDetected {n_anomalies}/{len(predictions)} anomalies "
+          f"({n_anomalies/len(predictions):.1%})")
 
     return model
 
@@ -437,51 +499,61 @@ def main():
     print(f"   Synthetic scams: {len(synthetic_scams)}")
     print(f"   Synthetic legit: {len(synthetic_legit)}")
 
-    # Step 4: Extract features
-    print("\nStep 4: Extracting features...")
-    X = build_feature_dataframe(all_jobs, fit_tfidf=True)
+    # Step 4: Extract labels
+    print("\nStep 4: Creating labels...")
     y_df = extract_labels(all_jobs)
-    y = y_df['is_scam'].values
-
-    print(f"   Features shape: {X.shape}")
+    y = y_df["is_scam"].values
     print(f"   Labels: {(y == 0).sum()} safe, {(y == 1).sum()} scam")
 
     if len(np.unique(y)) < 2:
-        print("\nERROR: Only one class found in labels.")
-        print("   Cannot train binary classifiers without both safe and scam jobs.")
-        print("   Check the extract_labels() function in feature_extractor.py.")
+        print("\nERROR: Only one class found. Cannot train classifiers.")
         return
 
-    # Step 5: Train/Test split
-    print("\nStep 5: Splitting train/test (80/20)...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y,
+    # Step 5: Split RAW jobs (prevents data leakage)
+    print("\nStep 5: Splitting raw jobs (80/20)...")
+    jobs_train, jobs_test, y_train, y_test = train_test_split(
+        all_jobs, y,
         test_size=0.2,
         random_state=RANDOM_SEED,
         stratify=y,
     )
+    print(f"   Train jobs: {len(jobs_train)}")
+    print(f"   Test jobs:  {len(jobs_test)}")
 
-    print(f"   Train: {X_train.shape}, Scams: {y_train.sum()}")
-    print(f"   Test:  {X_test.shape}, Scams: {y_test.sum()}")
+    # Step 6: TF-IDF fit ONLY on training data
+    print("\nStep 6: Extracting features (TF-IDF fit on train only)...")
+    X_train = build_feature_dataframe(jobs_train, fit_tfidf=True)
+    X_test  = build_feature_dataframe(jobs_test,  fit_tfidf=False)
 
-    # Step 6: Scale features
+    # Align test columns to match train columns
+    for col in X_train.columns:
+        if col not in X_test.columns:
+            X_test[col] = 0
+    X_test = X_test[X_train.columns]
+
+    print(f"   Train Features: {X_train.shape}")
+    print(f"   Test Features:  {X_test.shape}")
+
+    # Step 7: Cross-validation on training data only
+    cv_results = run_cross_validation(X_train, y_train)
+
+    # Step 8: Fit scaler (saved for downstream use even if not applied here)
     scaler = StandardScaler()
     scaler.fit(X_train)
 
-    # Step 7: Train models
-    rf_model, rf_acc, rf_f1 = train_random_forest(X_train, y_train, X_test, y_test)
+    # Step 9: Train all three models
+    rf_model,  rf_acc,  rf_f1  = train_random_forest(X_train, y_train, X_test, y_test)
     xgb_model, xgb_acc, xgb_f1 = train_xgboost(X_train, y_train, X_test, y_test)
-    iso_model = train_isolation_forest(X_train)
+    iso_model                  = train_isolation_forest(X_train)
 
-    # Step 8: Save models
-    print("\nStep 8: Saving trained models...")
-
-    joblib.dump(rf_model, MODELS_DIR / "random_forest.pkl")
+    # Step 10: Save models
+    print("\nStep 10: Saving trained models...")
+    joblib.dump(rf_model,  MODELS_DIR / "random_forest.pkl")
     joblib.dump(xgb_model, MODELS_DIR / "xgboost.pkl")
     joblib.dump(iso_model, MODELS_DIR / "isolation_forest.pkl")
-    joblib.dump(scaler, MODELS_DIR / "scaler.pkl")
+    joblib.dump(scaler,    MODELS_DIR / "scaler.pkl")
 
-    feature_columns = list(X.columns)
+    feature_columns = list(X_train.columns)
     with open(MODELS_DIR / "feature_columns.json", "w") as f:
         json.dump(feature_columns, f)
 
@@ -501,12 +573,13 @@ def main():
                 "path": str(MODELS_DIR / "isolation_forest.pkl")
             }
         },
+        "cross_validation": cv_results,
         "training_data": {
-            "total_jobs": len(all_jobs),
-            "real_jobs": len(real_jobs),
+            "total_jobs":      len(all_jobs),
+            "real_jobs":       len(real_jobs),
             "synthetic_scams": len(synthetic_scams),
             "synthetic_legit": len(synthetic_legit),
-            "features": len(feature_columns)
+            "features":        len(feature_columns)
         },
         "trained_at": pd.Timestamp.now().isoformat()
     }
@@ -517,7 +590,7 @@ def main():
     print(f"   Saved: random_forest.pkl, xgboost.pkl, isolation_forest.pkl")
     print(f"   Saved: scaler.pkl, feature_columns.json, metadata.json")
 
-    # Step 9: Final summary
+    # Step 11: Final summary
     print("\n" + "=" * 70)
     print("TRAINING COMPLETE")
     print("=" * 70)
@@ -527,6 +600,10 @@ def main():
     print(f"   {'Random Forest':<25s} {rf_acc:.2%}        {rf_f1:.4f}")
     print(f"   {'XGBoost':<25s} {xgb_acc:.2%}        {xgb_f1:.4f}")
     print(f"   {'Isolation Forest':<25s} (anomaly detection)")
+
+    print(f"\nCROSS-VALIDATION (5-fold):")
+    print(f"   Random Forest: {cv_results['rf_cv_f1_mean']:.4f} (+/- {cv_results['rf_cv_f1_std']:.4f})")
+    print(f"   XGBoost:       {cv_results['xgb_cv_f1_mean']:.4f} (+/- {cv_results['xgb_cv_f1_std']:.4f})")
 
     if xgb_acc > rf_acc:
         print(f"\nWINNER: XGBoost ({xgb_acc:.2%})")

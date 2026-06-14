@@ -26,6 +26,33 @@ ERROR_PAGE_INDICATORS = [
     "rate limit exceeded",
 ]
 
+# Patterns that confirm a string is an actual posted-date
+DATE_PATTERNS = [
+    r'\bposted\s+',
+    r'\bday\b', r'\bdays\b',
+    r'\bweek\b', r'\bweeks\b',
+    r'\bmonth\b', r'\bmonths\b',
+    r'\bhour\b', r'\bhours\b',
+    r'\bjust\s+now\b',
+    r'\btoday\b', r'\byesterday\b',
+    r'\d+\s+(day|week|month|hour)',
+]
+
+# Strings that are clearly NOT a posted date (job-type labels, etc.)
+NON_DATE_VALUES = {
+    "internship", "full time", "part time", "full-time", "part-time",
+    "permanent", "contract", "remote", "on-site", "onsite", "hybrid",
+    "unknown", "n/a", "na", "",
+}
+
+# Work-mode detection keywords
+REMOTE_KEYWORDS = [
+    "work from home", "wfh", "remote", "anywhere",
+    "fully remote", "telecommute", "virtual",
+]
+
+ONSITE_KEYWORDS = ["on-site", "onsite", "in-office", "in office"]
+
 
 class InternshalaConnector(BaseConnector):
 
@@ -33,7 +60,6 @@ class InternshalaConnector(BaseConnector):
 
     SEARCH_URL = "https://internshala.com/internships/keywords-{keywords}/"
 
-    # Each selector that is a list is tried in order; first match wins.
     SELECTORS = {
         "card_signal": "div.individual_internship, .internship_list_container, #internship_list",
 
@@ -72,6 +98,7 @@ class InternshalaConnector(BaseConnector):
             ".posted_by_container span",
             ".status-inactive",
             "[class*='posted']",
+            ".other_detail_item_row span",
         ],
         "apply_by": [
             "#apply_by",
@@ -114,40 +141,34 @@ class InternshalaConnector(BaseConnector):
     # ------------------------------------------------------------------------
 
     async def extract_job_links(self, page: Page) -> list[str]:
-        # Check for error pages first
         if await self._is_error_page(page):
             return []
 
-        # Wait up to 15s for any card to appear after React renders
         try:
             await page.wait_for_selector(self.SELECTORS["card_signal"], timeout=15000)
         except Exception:
             await asyncio.sleep(3)
 
-        # Scroll to load lazy cards
         for _ in range(5):
             await page.mouse.wheel(0, random.randint(300, 600))
             await asyncio.sleep(random.uniform(0.5, 1.0))
 
         await self.handle_popups(page)
 
-        # Primary: DOM selector
         links = await page.eval_on_selector_all(
             "a[href*='/internship/detail/']",
             "els => [...new Set(els.map(e => e.href))]"
         )
 
-        # Fallback: regex on raw HTML
         if not links:
             html = await page.content()
-            raw  = re.findall(
+            raw = re.findall(
                 r'href=["\'](/internship/detail/[a-zA-Z0-9\-_%]+/?)["\']',
                 html
             )
             links = [f"https://internshala.com{p}" for p in dict.fromkeys(raw)]
 
-        # Deduplicate and normalize
-        seen  = set()
+        seen = set()
         clean = []
         for link in links:
             base = link.split("?")[0].rstrip("/")
@@ -164,7 +185,6 @@ class InternshalaConnector(BaseConnector):
     async def extract_job_data(self, page: Page, url: str) -> Optional[RawJob]:
         await self.handle_popups(page)
 
-        # Skip error pages BEFORE trying to extract
         if await self._is_error_page(page):
             return None
 
@@ -177,7 +197,6 @@ class InternshalaConnector(BaseConnector):
         if not title:
             return None
 
-        # Additional safeguard: reject obvious non-job titles
         if self._is_invalid_title(title):
             return None
 
@@ -186,19 +205,11 @@ class InternshalaConnector(BaseConnector):
         duration = await self._safe_text(page, self.SELECTORS["duration"])
         desc     = await self._extract_description(page)
         apply_by = await self._safe_text(page, self.SELECTORS["apply_by"])
-        posted   = await self._safe_text(page, self.SELECTORS["posted_date"])
+        posted   = await self._extract_posted_date(page)
         location = await self._extract_location(page)
 
-        # Detect work-from-home mode
-        wfh = 0
-        for sel in self.SELECTORS["work_from_home"]:
-            try:
-                wfh = await page.locator(sel).count()
-                if wfh > 0:
-                    break
-            except Exception:
-                continue
-        mode = "Remote" if wfh > 0 else ("On-site" if location else "Unknown")
+        # Multi-signal mode detection (title + description + location)
+        mode = self._detect_mode(title, desc, location)
 
         # Extract skills
         skills = []
@@ -235,28 +246,21 @@ class InternshalaConnector(BaseConnector):
     # ------------------------------------------------------------------------
 
     async def _is_error_page(self, page: Page) -> bool:
-        """
-        Detect if the loaded page is a server error or block page
-        instead of a real Internshala job listing.
-        """
+        """Detect if the loaded page is a server error or block page."""
         try:
             title = (await page.title() or "").lower()
             for indicator in ERROR_PAGE_INDICATORS:
                 if indicator in title:
                     return True
 
-            # Check first 500 chars of body for error markers
             body_text = await page.evaluate(
                 "() => (document.body ? document.body.innerText : '').slice(0, 500).toLowerCase()"
             )
             for indicator in ERROR_PAGE_INDICATORS:
                 if indicator in body_text:
                     return True
-
         except Exception:
-            # If we can't even evaluate, treat as error
             return True
-
         return False
 
     def _is_invalid_title(self, title: str) -> bool:
@@ -268,6 +272,67 @@ class InternshalaConnector(BaseConnector):
             if indicator in t:
                 return True
         return False
+
+    def _detect_mode(self, title: str, description: str, location: str) -> str:
+        """
+        Detect work mode using multiple signals:
+            1. Job title text (highest priority)
+            2. Description text
+            3. Location hints
+
+        Returns: Remote / Hybrid / On-site / Unknown
+        """
+        combined = f"{title} {description} {location}".lower()
+
+        # Explicit remote signals
+        if any(kw in combined for kw in REMOTE_KEYWORDS):
+            return "Remote"
+
+        # Hybrid signals
+        if "hybrid" in combined:
+            return "Hybrid"
+
+        # Explicit on-site signals
+        if any(kw in combined for kw in ONSITE_KEYWORDS):
+            return "On-site"
+
+        # Has a real location -> assume on-site
+        if location and location.lower() not in ("", "remote", "anywhere"):
+            return "On-site"
+
+        return "Unknown"
+
+    async def _extract_posted_date(self, page: Page) -> str:
+        """
+        Extract posted date string.
+        Filters out non-date values like "Internship", "Part Time".
+        """
+        selectors = self.SELECTORS["posted_date"]
+        if isinstance(selectors, str):
+            selectors = [selectors]
+
+        for sel in selectors:
+            try:
+                elements = page.locator(sel)
+                count = await elements.count()
+                for i in range(min(count, 5)):
+                    text = (await elements.nth(i).inner_text()).strip()
+                    if not text:
+                        continue
+
+                    text_lower = text.lower()
+
+                    # Skip clearly-not-a-date strings
+                    if text_lower in NON_DATE_VALUES:
+                        continue
+
+                    # Match against date patterns
+                    if any(re.search(p, text_lower) for p in DATE_PATTERNS):
+                        return text
+            except Exception:
+                continue
+
+        return ""
 
     async def _safe_text(self, page: Page, selector) -> str:
         """Try each selector in the list; return first non-empty match."""
@@ -286,16 +351,14 @@ class InternshalaConnector(BaseConnector):
     async def _extract_description(self, page: Page) -> str:
         """
         Three-strategy description extraction:
-            1. Known CSS selectors (list, first match)
-            2. Largest text block on page (>150 chars, skips nav/footer noise)
-            3. JSON-LD structured data embedded in page source
+            1. Known CSS selectors
+            2. Largest text block on page (>150 chars)
+            3. JSON-LD structured data
         """
-        # Strategy 1
         text = await self._safe_text(page, self.SELECTORS["description"])
         if text and len(text) > 50:
             return text
 
-        # Strategy 2 - largest meaningful div/p/section
         try:
             blocks = await page.eval_on_selector_all(
                 "p, div, section",
@@ -316,15 +379,14 @@ class InternshalaConnector(BaseConnector):
         except Exception:
             pass
 
-        # Strategy 3 - JSON-LD in page HTML
         try:
             html = await page.content()
             m = re.search(r'"description"\s*:\s*"([^"]{100,})"', html)
             if m:
                 return (m.group(1)
-                         .replace("\\n", "\n")
-                         .replace("\\u003c", "<")
-                         .replace("\\u003e", ">"))
+                          .replace("\\n", "\n")
+                          .replace("\\u003c", "<")
+                          .replace("\\u003e", ">"))
         except Exception:
             pass
 

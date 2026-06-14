@@ -1,6 +1,6 @@
-﻿
+﻿# ------------------------------
 # Python
-
+# ------------------------------
 __pycache__/
 *.pyc
 *.pyo
@@ -11,66 +11,68 @@ __pycache__/
 .coverage
 htmlcov/
 
+# ------------------------------
 # Virtual Environment
-
+# ------------------------------
 venv/
 env/
 .venv/
 
-
-# Environment Variables
-
+# ------------------------------
+# Environment Variables (NEVER COMMIT)
+# ------------------------------
 .env
 .env.local
 .env.*.local
 backend/.env
 
-
+# ------------------------------
 # IDE / Editor
-
+# ------------------------------
 .vscode/
 .idea/
 *.swp
 .DS_Store
 
-
+# ------------------------------
 # Logs
-
+# ------------------------------
 logs/
 *.log
-data/logs/*.log
+data/logs/
 
-
+# ------------------------------
 # Large Data Files
-
-data/training/*.csv
-data/raw/
+# ------------------------------
+data/
+ml/
 *.csv
 
-
-# ML Model Files
-
+# ------------------------------
+# ML Model Files (Do NOT Push)
+# ------------------------------
 backend/ml/models/
-ml/models/
 *.pkl
 *.joblib
+*.h5
+*.model
 
-
+# ------------------------------
 # Node / Frontend
-
+# ------------------------------
 node_modules/
 dist/
 build/
 .next/
 
-
+# ------------------------------
 # Archives / Backups
-
+# ------------------------------
 *.zip
 *_BACKUP_*.zip
 
-
+# ------------------------------
 # OS Files
-
+# ------------------------------
 Thumbs.db
 desktop.ini
