@@ -44,3 +44,18 @@ desktop.ini
 
 # Backup
 *_BACKUP_*.zip
+
+venv/
+__pycache__/
+*.pyc
+*.pkl
+*.csv
+.env
+
+*.h5
+*.zip
+*.ipynb_checkpoints/
+
+backend/ml/models/features.csv
+backend/ml/models/embedding_model/
+*.safetensors
