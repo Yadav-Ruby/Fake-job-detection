@@ -24,10 +24,10 @@ export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   const stats = [
-    { label: 'Scam Listings Analyzed', value: '382,410' },
-    { label: 'Fake Recruiters Blocked', value: '14,295' },
-    { label: 'Candidate Fraud Losses Saved', value: '$18.4M+' },
-    { label: 'AI Detection Accuracy', value: '99.8%' }
+    { label: 'Scam Listings Analyzed', value: '10,000+' },
+    { label: 'Fake Recruiters Blocked', value: '1,542' },
+    { label: 'Candidate Fraud Losses Saved', value: '$1,436+' },
+    { label: 'AI Detection Accuracy', value: '99.00%' }
   ];
 
   const features = [
