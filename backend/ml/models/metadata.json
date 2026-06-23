@@ -1,0 +1,28 @@
+{
+  "models": {
+    "random_forest": {
+      "accuracy": 0.7815712187958884,
+      "f1_score": 0.7782655891640228,
+      "path": "D:\\Madhav_Gagneja\\GRAPHURA DATA SCIENCE & AI\\Projects\\Fake_Internship_&_Job_Scam_Detection_System\\Graphura\\backend\\ml\\models\\random_forest.pkl"
+    },
+    "xgboost": {
+      "accuracy": 0.7973568281938326,
+      "f1_score": 0.7878368953841819,
+      "path": "D:\\Madhav_Gagneja\\GRAPHURA DATA SCIENCE & AI\\Projects\\Fake_Internship_&_Job_Scam_Detection_System\\Graphura\\backend\\ml\\models\\xgboost.pkl"
+    },
+    "isolation_forest": {
+      "path": "D:\\Madhav_Gagneja\\GRAPHURA DATA SCIENCE & AI\\Projects\\Fake_Internship_&_Job_Scam_Detection_System\\Graphura\\backend\\ml\\models\\isolation_forest.pkl"
+    }
+  },
+  "cross_validation": {
+    "rf_cv_f1_mean": 0.7725161874604604,
+    "rf_cv_f1_std": 0.009156652316434614,
+    "xgb_cv_f1_mean": 0.7730043341391187,
+    "xgb_cv_f1_std": 0.0060536082162252125
+  },
+  "training_data": {
+    "total_jobs": 13616,
+    "features": 773
+  },
+  "trained_at": "2026-06-21T11:53:16.319546"
+}
