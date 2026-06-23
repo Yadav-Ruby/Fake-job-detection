@@ -8,12 +8,19 @@ import spacy
 from typing import List, Dict
 
 # INITIALIZE SPACY MODEL WITH AUTO-DOWNLOAD FALLBACK
+# try:
+#     nlp = spacy.load("en_core_web_sm")
+# except OSError:
+#     import spacy.cli
+#     spacy.cli.download("en_core_web_sm")
+#     nlp = spacy.load("en_core_web_sm")
+
 try:
-    nlp = spacy.load("en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm", exclude=["parser"])
 except OSError:
     import spacy.cli
     spacy.cli.download("en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm", exclude=["parser"])
 
 # SCAM KEYWORD DATABASE
 # Weight : 0 - 100

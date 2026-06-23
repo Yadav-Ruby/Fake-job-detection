@@ -16,6 +16,9 @@ from .nlp_engine import (
     generate_ngrams,
 )
 
+# if "parser" in nlp.pipe_names:
+#     nlp.disable_pipe("parser")
+
 if "parser" in nlp.pipe_names:
     nlp.disable_pipe("parser")
 
