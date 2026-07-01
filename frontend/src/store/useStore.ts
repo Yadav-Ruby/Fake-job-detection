@@ -149,7 +149,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   createAdmin: async (name, email, password) => {
     try {
-      const res = await fetch(apiurl('/api/admin/users'), {
+      const res = await fetch(apiUrl('/api/admin/users'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password })
@@ -229,7 +229,9 @@ export const useStore = create<AppState>((set, get) => ({
         body = formData;
       }
 
-      const response = await fetch(endpoint, {
+      // const response = await fetch(endpoint, {
+      // const response = await fetch(apiUrl(endpoint), {
+      const response = await fetch(apiUrl(endpoint), {
         method,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         body
@@ -322,7 +324,7 @@ export const useStore = create<AppState>((set, get) => ({
       // Log the scan audit trail
       const currentUser = get().user;
       if (currentUser) {
-        fetch(apiurl('/api/audit-logs'), {
+        fetch(apiUrl('/api/audit-logs'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -348,7 +350,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   checkRecruiter: async (email, companyName, name) => {
     try {
-      const res = await fetch(apiurl('/api/verify/recruiter'), {
+      const res = await fetch(apiUrl('/api/verify/recruiter'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name || '', email, company: companyName })
@@ -403,7 +405,7 @@ export const useStore = create<AppState>((set, get) => ({
     };
 
     try {
-      await fetch(apiurl('/api/report'), {
+      await fetch(apiUrl('/api/report'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -418,7 +420,7 @@ export const useStore = create<AppState>((set, get) => ({
       
       const currentUser = get().user;
       if (currentUser) {
-        fetch(apiurl('/api/audit-logs'), {
+        fetch(apiUrl('/api/audit-logs'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -465,7 +467,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   updateReportStatus: async (id, status) => {
     try {
-      await fetch(`/api/admin/reports/${id}/status`, {
+      // await fetch(`/api/admin/reports/${id}/status`, {
+      // await fetch(apiUrl(`/api/admin/reports/${id}/status`), {
+      await fetch(apiUrl(`/api/admin/reports/${id}/status`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
@@ -480,12 +484,12 @@ export const useStore = create<AppState>((set, get) => ({
 
   addDomain: async (domain, riskScore, threatType, status, registrar) => {
     try {
-      await fetch(apiurl('/api/admin/domains'), {
+      await fetch(apiUrl('/api/admin/domains'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, riskScore, threatType, status, registrar })
       });
-      const res = await fetch(apiurl('/api/admin/domains'));
+      const res = await fetch(apiUrl('/api/admin/domains'));
       if (res.ok) {
         const data = await res.json();
         set({ domains: data.domains || [] });
@@ -497,7 +501,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   deleteDomain: async (id) => {
     try {
-      await fetch(`/api/admin/domains/${id}`, {
+      // await fetch(`/api/admin/domains/${id}`, {
+      // await fetch(apiUrl(`/api/admin/domains/${id}`), {
+      await fetch(apiUrl(`/api/admin/domains/${id}`), {
         method: 'DELETE'
       });
       set((state) => ({
@@ -528,7 +534,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchJobs: async () => {
     try {
-      const res = await fetch(apiurl('/api/jobs'));
+      const res = await fetch(apiUrl('/api/jobs'));
       if (res.ok) {
         const data = await res.json();
         if (data && data.jobs) {
@@ -604,7 +610,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchUsers: async () => {
     try {
-      const res = await fetch(apiurl('/api/admin/users'));
+      const res = await fetch(apiUrl('/api/admin/users'));
       if (res.ok) {
         const data = await res.json();
         set({ users: data.users || [] });
@@ -616,7 +622,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchReports: async () => {
     try {
-      const res = await fetch(apiurl('/api/admin/reports'));
+      const res = await fetch(apiUrl('/api/admin/reports'));
       if (res.ok) {
         const data = await res.json();
         set({ reports: data.reports || [] });
@@ -628,7 +634,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchDomains: async () => {
     try {
-      const res = await fetch(apiurl('/api/admin/domains'));
+      const res = await fetch(apiUrl('/api/admin/domains'));
       if (res.ok) {
         const data = await res.json();
         set({ domains: data.domains || [] });
@@ -640,7 +646,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchAnalytics: async () => {
     try {
-      const res = await fetch(apiurl('/api/admin/analytics'));
+      const res = await fetch(apiUrl('/api/admin/analytics'));
       if (res.ok) {
         return await res.json();
       }
@@ -652,7 +658,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchStats: async () => {
     try {
-      const res = await fetch(apiurl('/api/stats'));
+      const res = await fetch(apiUrl('/api/stats'));
       if (res.ok) {
         const data = await res.json();
         set({
